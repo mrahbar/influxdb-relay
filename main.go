@@ -7,23 +7,23 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/influxdata/influxdb-relay/relay"
+	"github.com/mrahbar/influxdb-relay/relay"
 )
 
 var (
-	configFile = flag.String("config", "", "Configuration file to use")
+	configJson = flag.String("config", "", "Configuration json object to use")
 )
 
 func main() {
 	flag.Parse()
 
-	if *configFile == "" {
+	if *configJson == "" {
 		fmt.Fprintln(os.Stderr, "Missing configuration file")
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
 
-	cfg, err := relay.LoadConfigFile(*configFile)
+	cfg, err := relay.LoadConfigJson(*configJson)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Problem loading config file:", err)
 	}
