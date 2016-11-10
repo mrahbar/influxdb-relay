@@ -10,9 +10,9 @@ To build from source and run:
 
 ```sh
 $ # Install influxdb-relay to your $GOPATH/bin
-$ go get -u github.com/influxdata/influxdb-relay
+$ go get -u github.com/mrahbar/influxdb-relay
 $ # Edit your configuration file
-$ cp $GOPATH/src/github.com/influxdata/influxdb-relay/sample.toml ./relay.toml
+$ cp $GOPATH/src/github.com/mrahbar/influxdb-relay/sample.toml ./relay.toml
 $ vim relay.toml
 $ # Start relay!
 $ $GOPATH/bin/influxdb-relay -config relay.toml
@@ -178,7 +178,7 @@ docker build -f Dockerfile_build_ubuntu64 -t influxdb-relay-builder:latest .
 And then to build the project:
 
 ```
-docker run --rm -v $(pwd):/root/go/src/github.com/influxdata/influxdb-relay influxdb-relay-builder
+docker run --rm -v $(pwd):/root/go/src/github.com/mrahbar/influxdb-relay influxdb-relay-builder
 ```
 
 *NOTE* By default, builds will be for AMD64 Linux (since the container
@@ -190,7 +190,7 @@ and leave any build output in the `./build` directory. To see a list
 of available build commands, append a `--help` to the command above.
 
 ```
-docker run -v $(pwd):/root/go/src/github.com/influxdata/influxdb-relay influxdb-relay-builder --help
+docker run -v $(pwd):/root/go/src/github.com/mrahbar/influxdb-relay influxdb-relay-builder --help
 ```
 
 ### Packages
@@ -199,7 +199,7 @@ To build system packages for Linux (`deb`, `rpm`, etc), use the
 `--package` option:
 
 ```
-docker run -v $(pwd):/root/go/src/github.com/influxdata/influxdb-relay influxdb-relay-builder --package
+docker run -v $(pwd):/root/go/src/github.com/mrahbar/influxdb-relay influxdb-relay-builder --package
 ```
 
 To build packages for other platforms or architectures, use the

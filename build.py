@@ -34,7 +34,7 @@ CONFIGURATION_FILES = [
 ]
 
 PACKAGE_LICENSE = "MIT"
-PACKAGE_URL = "https://github.com/influxdata/influxdb-relay"
+PACKAGE_URL = "https://github.com/mrahbar/influxdb-relay"
 DESCRIPTION = "Service to replicate InfluxDB data for high availability."
 
 prereqs = [ 'git', 'go' ]
