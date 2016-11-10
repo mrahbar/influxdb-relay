@@ -18,9 +18,13 @@ func main() {
 	flag.Parse()
 
 	if *configJson == "" {
-		fmt.Fprintln(os.Stderr, "Missing configuration file")
-		flag.PrintDefaults()
-		os.Exit(1)
+		*configJson = os.Getenv("CONFIG")
+
+		if *configJson == "" {
+			fmt.Fprintln(os.Stderr, "Missing configuration file")
+			flag.PrintDefaults()
+			os.Exit(1)
+		}
 	}
 
 	cfg, err := relay.LoadConfigJson(*configJson)
