@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/influxdata/influxdb/models"
+	"net/http/httputil"
 )
 
 // HTTP is a relay for HTTP influxdb writes
@@ -24,6 +25,7 @@ type HTTP struct {
 	addr   string
 	name   string
 	schema string
+	debug bool
 
 	cert string
 	rp   string
@@ -43,8 +45,9 @@ const (
 	MB = 1024 * KB
 )
 
-func NewHTTP(cfg HTTPConfig) (Relay, error) {
+func NewHTTP(debug bool, cfg HTTPConfig) (Relay, error) {
 	h := new(HTTP)
+	h.debug = debug
 
 	h.addr = cfg.Addr
 	h.name = cfg.Name
@@ -58,7 +61,7 @@ func NewHTTP(cfg HTTPConfig) (Relay, error) {
 	}
 
 	for i := range cfg.Outputs {
-		backend, err := newHTTPBackend(&cfg.Outputs[i])
+		backend, err := newHTTPBackend(debug, &cfg.Outputs[i])
 		if err != nil {
 			return nil, err
 		}
@@ -95,8 +98,16 @@ func (h *HTTP) Run() error {
 	}
 
 	h.l = l
+	outputs := ""
+	for _, o := range h.backends {
+		if o.name == "" {
+			outputs += "<unknown> "
+		} else {
+			outputs += o.name+" "
+		}
+	}
 
-	log.Printf("Starting %s relay %q on %v", strings.ToUpper(h.schema), h.Name(), h.addr)
+	log.Printf("Starting %s relay %q on %v with outputs %s", strings.ToUpper(h.schema), h.Name(), h.addr, outputs)
 
 	err = http.Serve(l, h)
 	if atomic.LoadInt64(&h.closing) != 0 {
@@ -113,6 +124,15 @@ func (h *HTTP) Stop() error {
 func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
+	if h.debug {
+		dump, err := httputil.DumpRequest(r, true)
+		if err != nil {
+			log.Printf("[D] Log request error: %s", err)
+		} else {
+			log.Printf("[D] Request: %s\n", strings.TrimSpace(string(dump)))
+		}
+	}
+
 	if r.URL.Path == "/ping" && (r.Method == "GET" || r.Method == "HEAD") {
 		w.Header().Add("X-InfluxDB-Version", "relay")
 		w.WriteHeader(http.StatusOK)
@@ -121,7 +141,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.URL.Path != "/write" {
-		jsonError(w, http.StatusNotFound, "invalid write endpoint")
+		jsonError(w, http.StatusNotFound, "invalid write endpoint", h.debug)
 		return
 	}
 
@@ -130,7 +150,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusNoContent)
 		} else {
-			jsonError(w, http.StatusMethodNotAllowed, "invalid write method")
+			jsonError(w, http.StatusMethodNotAllowed, "invalid write method", h.debug)
 		}
 		return
 	}
@@ -139,7 +159,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// fail early if we're missing the database
 	if queryParams.Get("db") == "" {
-		jsonError(w, http.StatusBadRequest, "missing parameter: db")
+		jsonError(w, http.StatusBadRequest, "missing parameter: db", h.debug)
 		return
 	}
 
@@ -152,7 +172,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Content-Encoding") == "gzip" {
 		b, err := gzip.NewReader(r.Body)
 		if err != nil {
-			jsonError(w, http.StatusBadRequest, "unable to decode gzip body")
+			jsonError(w, http.StatusBadRequest, "unable to decode gzip body", h.debug)
 		}
 		defer b.Close()
 		body = b
@@ -162,7 +182,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, err := bodyBuf.ReadFrom(body)
 	if err != nil {
 		putBuf(bodyBuf)
-		jsonError(w, http.StatusInternalServerError, "problem reading request body")
+		jsonError(w, http.StatusInternalServerError, "problem reading request body", h.debug)
 		return
 	}
 
@@ -170,7 +190,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	points, err := models.ParsePointsWithPrecision(bodyBuf.Bytes(), start, precision)
 	if err != nil {
 		putBuf(bodyBuf)
-		jsonError(w, http.StatusBadRequest, "unable to parse points")
+		jsonError(w, http.StatusBadRequest, "unable to parse points", h.debug)
 		return
 	}
 
@@ -189,7 +209,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		putBuf(outBuf)
-		jsonError(w, http.StatusInternalServerError, "problem writing points")
+		jsonError(w, http.StatusInternalServerError, "problem writing points", h.debug)
 		return
 	}
 
@@ -208,9 +228,12 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	for _, b := range h.backends {
 		b := b
+		if h.debug {
+			log.Printf("[D] Calling downstream %s\n", b.name)
+		}
 		go func() {
 			defer wg.Done()
-			resp, err := b.post(outBytes, query, authHeader)
+			resp, err := b.post(outBytes, query, authHeader, h.debug)
 			if err != nil {
 				log.Printf("Problem posting to relay %q backend %q: %v", h.Name(), b.name, err)
 			} else {
@@ -250,7 +273,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// no successful writes
 	if errResponse == nil {
 		// failed to make any valid request...
-		jsonError(w, http.StatusServiceUnavailable, "unable to write points")
+		jsonError(w, http.StatusServiceUnavailable, "unable to write points", h.debug)
 		return
 	}
 
@@ -278,16 +301,21 @@ func (rd *responseData) Write(w http.ResponseWriter) {
 	w.Write(rd.Body)
 }
 
-func jsonError(w http.ResponseWriter, code int, message string) {
+func jsonError(w http.ResponseWriter, code int, message string, debug bool) {
 	w.Header().Set("Content-Type", "application/json")
 	data := fmt.Sprintf("{\"error\":%q}\n", message)
+
+	if debug {
+		log.Printf("[D] %s", data)
+	}
+
 	w.Header().Set("Content-Length", fmt.Sprint(len(data)))
 	w.WriteHeader(code)
 	w.Write([]byte(data))
 }
 
 type poster interface {
-	post([]byte, string, string) (*responseData, error)
+	post([]byte, string, string, bool) (*responseData, error)
 }
 
 type simplePoster struct {
@@ -313,7 +341,7 @@ func newSimplePoster(location string, timeout time.Duration, skipTLSVerification
 	}
 }
 
-func (b *simplePoster) post(buf []byte, query string, auth string) (*responseData, error) {
+func (b *simplePoster) post(buf []byte, query string, auth string, debug bool) (*responseData, error) {
 	req, err := http.NewRequest("POST", b.location, bytes.NewReader(buf))
 	if err != nil {
 		return nil, err
@@ -340,12 +368,18 @@ func (b *simplePoster) post(buf []byte, query string, auth string) (*responseDat
 		return nil, err
 	}
 
-	return &responseData{
+	responseData := &responseData{
 		ContentType:     resp.Header.Get("Conent-Type"),
 		ContentEncoding: resp.Header.Get("Conent-Encoding"),
 		StatusCode:      resp.StatusCode,
 		Body:            data,
-	}, nil
+	}
+
+	if debug {
+		log.Printf("[D] %+v\n", responseData)
+	}
+
+	return responseData, nil
 }
 
 type httpBackend struct {
@@ -353,7 +387,7 @@ type httpBackend struct {
 	name string
 }
 
-func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
+func newHTTPBackend(debug bool, cfg *HTTPOutputConfig) (*httpBackend, error) {
 	if cfg.Name == "" {
 		cfg.Name = cfg.Location
 	}
@@ -386,7 +420,7 @@ func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
 			batch = cfg.MaxBatchKB * KB
 		}
 
-		p = newRetryBuffer(cfg.BufferSizeMB*MB, batch, max, p)
+		p = newRetryBuffer(cfg.BufferSizeMB*MB, batch, max, p, debug)
 	}
 
 	return &httpBackend{

@@ -21,6 +21,7 @@ type UDP struct {
 	addr      string
 	name      string
 	precision string
+	debug     bool
 
 	closing int64
 	l       *net.UDPConn
@@ -29,8 +30,9 @@ type UDP struct {
 	backends []*udpBackend
 }
 
-func NewUDP(config UDPConfig) (Relay, error) {
+func NewUDP(debug bool, config UDPConfig) (Relay, error) {
 	u := new(UDP)
+	u.debug = debug
 
 	u.name = config.Name
 	u.addr = config.Addr

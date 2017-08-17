@@ -15,23 +15,23 @@ func New(config Config) (*Service, error) {
 	s.relays = make(map[string]Relay)
 
 	for _, cfg := range config.HTTPRelays {
-		h, err := NewHTTP(cfg)
+		h, err := NewHTTP(config.Debug, cfg)
 		if err != nil {
 			return nil, err
 		}
 		if s.relays[h.Name()] != nil {
-			return nil, fmt.Errorf("duplicate relay: %q", h.Name())
+			return nil, fmt.Errorf("Duplicate relay: %q", h.Name())
 		}
 		s.relays[h.Name()] = h
 	}
 
 	for _, cfg := range config.UDPRelays {
-		u, err := NewUDP(cfg)
+		u, err := NewUDP(config.Debug, cfg)
 		if err != nil {
 			return nil, err
 		}
 		if s.relays[u.Name()] != nil {
-			return nil, fmt.Errorf("duplicate relay: %q", u.Name())
+			return nil, fmt.Errorf("Duplicate relay: %q", u.Name())
 		}
 		s.relays[u.Name()] = u
 	}

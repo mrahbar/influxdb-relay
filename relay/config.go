@@ -5,6 +5,7 @@ import (
 )
 
 type Config struct {
+	Debug      bool `json:"debug"`
 	HTTPRelays []HTTPConfig `json:"http"`
 	UDPRelays  []UDPConfig  `json:"udp"`
 }

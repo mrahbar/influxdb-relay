@@ -10,26 +10,29 @@ import (
 	"github.com/mrahbar/influxdb-relay/relay"
 )
 
-var (
-	configJson = flag.String("config", "", "Configuration json object to use")
-)
+var configJson string
 
 func main() {
+	flag.StringVar(&configJson, "config", "", "Configuration json object to use")
 	flag.Parse()
 
-	if *configJson == "" {
-		*configJson = os.Getenv("CONFIG")
+	if configJson == "" {
+		configJson = os.Getenv("CONFIG")
 
-		if *configJson == "" {
+		if configJson == "" {
 			fmt.Fprintln(os.Stderr, "Missing configuration file")
 			flag.PrintDefaults()
 			os.Exit(1)
 		}
 	}
 
-	cfg, err := relay.LoadConfigJson(*configJson)
+	cfg, err := relay.LoadConfigJson(configJson)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Problem loading config file:", err)
+	}
+
+	if cfg.Debug {
+		log.Println("[D] Debug is on")
 	}
 
 	r, err := relay.New(cfg)
@@ -45,6 +48,6 @@ func main() {
 		r.Stop()
 	}()
 
-	log.Println("starting relays...")
+	log.Println("Starting relays...")
 	r.Run()
 }
